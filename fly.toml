@@ -1,0 +1,17 @@
+# fly.toml app configuration file
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+
+app = "football-news-bot"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PARSE_INTERVAL_MINUTES = "30"
+  MAX_NEWS_PER_REQUEST = "10"
+  DATABASE_URL = "sqlite+aiosqlite:////app/data/news_bot.db"
+
+[mounts]
+  source = "bot_data"
+  destination = "/app/data"

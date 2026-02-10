@@ -1,0 +1,15 @@
+services:
+  - type: worker
+    name: football-news-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:////app/data/news_bot.db
+      - key: PARSE_INTERVAL_MINUTES
+        value: 30
+      - key: MAX_NEWS_PER_REQUEST
+        value: 10

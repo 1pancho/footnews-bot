@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: football-news-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/news_bot.db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
