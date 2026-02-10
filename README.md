@@ -20,7 +20,7 @@ Telegram-бот для парсинга и отслеживания футбол
 #### 1. Клонируйте репозиторий
 
 ```bash
-git clone https://github.com/yourusername/news-parser-bot.git
+git clone https://github.com/1pancho/footnews-bot.git
 cd news-parser-bot
 ```
 
