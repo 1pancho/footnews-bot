@@ -1,0 +1,71 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to VPS
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USERNAME }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        port: 22
+        script: |
+          # Navigate to project directory
+          cd /root/football-news-bot || exit 1
+
+          # Pull latest changes
+          git pull origin main
+
+          # Create .env file if not exists
+          if [ ! -f .env ]; then
+            echo "Creating .env file..."
+            cat > .env << EOF
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          DATABASE_URL=sqlite+aiosqlite:///./data/news_bot.db
+          PARSE_INTERVAL_MINUTES=30
+          MAX_NEWS_PER_REQUEST=10
+          EOF
+          fi
+
+          # Create directories
+          mkdir -p data logs
+
+          # Stop old container
+          docker compose down || true
+
+          # Start new container
+          docker compose up -d --build
+
+          # Wait for startup
+          sleep 5
+
+          # Show status
+          echo "=== Container Status ==="
+          docker compose ps
+
+          # Show logs
+          echo "=== Recent Logs ==="
+          docker compose logs --tail=30
+
+          echo ""
+          echo "✅ Deployment completed!"
+
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "✅ Deployment successful!"
+        else
+          echo "❌ Deployment failed!"
+        fi

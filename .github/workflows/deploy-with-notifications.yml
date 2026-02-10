@@ -1,0 +1,101 @@
+name: Deploy to VPS with Notifications
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PROJECT_PATH: /root/football-news-bot
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🚀 Deploy to VPS
+      id: deploy
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USERNAME }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        port: 22
+        script_stop: false
+        script: |
+          set -e
+
+          echo "🔍 Checking project directory..."
+          if [ ! -d "${{ env.PROJECT_PATH }}" ]; then
+            echo "📂 Cloning repository..."
+            git clone https://github.com/${{ github.repository }}.git ${{ env.PROJECT_PATH }}
+          fi
+
+          cd ${{ env.PROJECT_PATH }}
+
+          echo "📦 Pulling latest changes..."
+          git fetch origin
+          git reset --hard origin/main
+
+          echo "⚙️  Configuring environment..."
+          if [ ! -f .env ]; then
+            echo "Creating .env file..."
+            cat > .env << 'ENVEOF'
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          DATABASE_URL=sqlite+aiosqlite:///./data/news_bot.db
+          PARSE_INTERVAL_MINUTES=30
+          MAX_NEWS_PER_REQUEST=10
+          ENVEOF
+          fi
+
+          echo "📁 Creating directories..."
+          mkdir -p data logs
+
+          echo "🛑 Stopping old container..."
+          docker compose down || true
+
+          echo "🏗️  Building and starting new container..."
+          docker compose up -d --build
+
+          echo "⏳ Waiting for startup..."
+          sleep 5
+
+          echo ""
+          echo "╔════════════════════════════════════════╗"
+          echo "║   ✅ Deployment Status                 ║"
+          echo "╚════════════════════════════════════════╝"
+
+          if docker compose ps | grep -q "Up"; then
+            echo "✅ Container is running"
+            docker compose ps
+            echo ""
+            echo "📋 Recent logs:"
+            docker compose logs --tail=20
+            exit 0
+          else
+            echo "❌ Container failed to start"
+            docker compose ps
+            docker compose logs --tail=50
+            exit 1
+          fi
+
+    - name: 📊 Deployment Summary
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "### ✅ Deployment Successful! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Server**: ${{ secrets.VPS_HOST }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Author**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🤖 Bot should now be running with the latest changes!" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Please check the logs above for details." >> $GITHUB_STEP_SUMMARY
+        fi
