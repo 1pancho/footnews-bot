@@ -1,71 +1,113 @@
-name: Deploy to VPS
+name: Deploy Bot
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # Allow manual trigger
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - '!.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+env:
+  PROJECT_PATH: /root/football-news-bot
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    - name: 📥 Checkout
       uses: actions/checkout@v4
 
-    - name: Deploy to VPS
+    - name: 🚀 Deploy to Server
       uses: appleboy/ssh-action@v1.0.3
       with:
         host: ${{ secrets.VPS_HOST }}
         username: ${{ secrets.VPS_USERNAME }}
         password: ${{ secrets.VPS_PASSWORD }}
         port: 22
+        command_timeout: 30m
         script: |
-          # Navigate to project directory
-          cd /root/football-news-bot || exit 1
+          set -e
 
-          # Pull latest changes
-          git pull origin main
+          echo "================================"
+          echo "🚀 Football News Bot Deployment"
+          echo "================================"
 
-          # Create .env file if not exists
-          if [ ! -f .env ]; then
-            echo "Creating .env file..."
-            cat > .env << EOF
+          # Install Docker if needed
+          if ! command -v docker &> /dev/null; then
+            echo "📦 Installing Docker..."
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sh get-docker.sh
+            rm get-docker.sh
+            apt-get install -y docker-compose-plugin git
+            systemctl start docker
+            systemctl enable docker
+          fi
+
+          # Clone or pull repository
+          if [ ! -d "${{ env.PROJECT_PATH }}" ]; then
+            echo "📂 Cloning repository..."
+            git clone https://github.com/${{ github.repository }}.git ${{ env.PROJECT_PATH }}
+          else
+            echo "📦 Updating repository..."
+            cd ${{ env.PROJECT_PATH }}
+            git fetch origin
+            git reset --hard origin/main
+          fi
+
+          cd ${{ env.PROJECT_PATH }}
+
+          # Create .env file
+          echo "⚙️  Creating .env..."
+          cat > .env << 'ENVEOF'
           TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
           DATABASE_URL=sqlite+aiosqlite:///./data/news_bot.db
           PARSE_INTERVAL_MINUTES=30
           MAX_NEWS_PER_REQUEST=10
-          EOF
-          fi
+          ENVEOF
 
           # Create directories
           mkdir -p data logs
 
-          # Stop old container
-          docker compose down || true
+          # Deploy with Docker
+          echo "🛑 Stopping old container..."
+          docker compose down 2>/dev/null || true
 
-          # Start new container
+          echo "🏗️  Building and starting..."
           docker compose up -d --build
 
-          # Wait for startup
-          sleep 5
-
-          # Show status
-          echo "=== Container Status ==="
-          docker compose ps
-
-          # Show logs
-          echo "=== Recent Logs ==="
-          docker compose logs --tail=30
+          echo "⏳ Waiting for startup..."
+          sleep 8
 
           echo ""
-          echo "✅ Deployment completed!"
+          echo "================================"
+          echo "📊 Status"
+          echo "================================"
+          docker compose ps
 
-    - name: Notify deployment status
+          echo ""
+          echo "📋 Recent logs:"
+          docker compose logs --tail=25
+
+          echo ""
+          if docker compose ps | grep -q "Up"; then
+            echo "✅ Bot is running!"
+            exit 0
+          else
+            echo "❌ Bot failed to start"
+            docker compose logs
+            exit 1
+          fi
+
+    - name: 📊 Summary
       if: always()
       run: |
-        if [ ${{ job.status }} == 'success' ]; then
+        if [ "${{ job.status }}" == "success" ]; then
           echo "✅ Deployment successful!"
+          echo ""
+          echo "Next: Open Telegram and send /start to your bot"
         else
-          echo "❌ Deployment failed!"
+          echo "❌ Deployment failed - check logs above"
         fi
